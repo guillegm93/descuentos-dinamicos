@@ -2,7 +2,7 @@
 /* 
  * Plugin Name: Descuentos Dinámicos WooCommerce
  * Description: Plugin para aplicar descuentos automaticos
- * Version: 1.0
+ * Version: 1.1
  * Author: Guillermo Gonzalez Maroto
  */
 
@@ -32,6 +32,7 @@ add_action('admin_init', function(){
         register_setting('dd_settings_group', 'dd_enable_2x1');
         register_setting('dd_settings_group', 'dd_enable_role');
         register_setting('dd_settings_group', 'dd_role_discount');
+        register_setting('dd_settings_group', 'dd_allowed_categories');
 });
 
 // Página de administracion
@@ -73,6 +74,30 @@ function dd_admin_page(){
                     <input type="number" name="dd_role_discount" value="<?php echo esc_attr(get_option('dd_role_discount',5));?>">
                 </td>
             </tr>
+            <tr>
+                <th>Categorias permitidas</th>
+                <td>
+                    <?php
+                    $categorias = get_terms([
+                        'taxonomy' => 'product_cat',
+                        'hide_empty' => false,
+                    ]);
+                    $categorias_guardadas = get_option('dd_allowed_categories', []);
+                    ?>
+                    <select name="dd_allowed_categories[]" multiple style="width: 300px; height: 150px;">
+                        <?php
+                        foreach($categorias as $categoria){
+                            ?>
+                        <option value="<?php echo $categoria->term_id;?>" <?php selected(in_array($categoria->term_id, $categorias_guardadas)); ?>>
+                            <?php echo $categoria->name; ?>
+                        </option>
+                        <?php
+                        }
+                        ?>
+                    </select>
+                    <p>Selecciona categorias donde aplicar descuentos</p>
+                </td>
+            </tr>
         </table>
         <?php submit_button(); ?>
     </form>
@@ -111,6 +136,15 @@ function aplicar_descuentos_dinamicos($cart) {
         $precio = $item['line_subtotal'] / $cantidad;
 
         $descuentos = [];
+        
+        // Registro de categorias
+        $product_id = $item['product_id'];
+        $product_cats = array_map('intval', wp_get_post_terms(
+            $product_id,
+            'product_cat',
+            ['fields' => 'ids']
+        ));
+        $allowed_categories = array_map('intval', (array) get_option('dd_allowed_categories', []));
 
         // 🔹 Descuento por cantidad
         if ($enable_qty && $cantidad >= 3) {
@@ -134,6 +168,18 @@ function aplicar_descuentos_dinamicos($cart) {
         if (!empty($descuentos)) {
             $descuento_total += max($descuentos);
         }
+        
+        // Aplicar descuentos a categorias
+        if (!empty($allowed_categories)){
+            $coincide_categoria = array_intersect(
+                    $product_cats,
+                    $allowed_categories
+            );
+            if (empty($coincide_categoria)){
+                continue;
+            }
+        }
+        
     }
 
     // Añadir descuento
